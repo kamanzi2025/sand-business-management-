@@ -9,7 +9,7 @@ router.get('/summary', async (req, res, next) => {
         COALESCE(SUM(quantity_trucks), 0) AS total_trucks,
         COALESCE(SUM(purchase_total), 0) AS total_purchase_cost,
         COALESCE(SUM(sale_total), 0) AS total_sales_revenue,
-        COALESCE(SUM(sale_total - purchase_total - net_after_vat), 0) AS total_net_profit
+        COALESCE(SUM(net_after_vat), 0) AS total_net_profit
       FROM orders`);
 
     const outstanding = await get(
@@ -39,7 +39,7 @@ router.get('/trend', async (req, res, next) => {
     const rows = await all(`SELECT
         strftime('%Y-%m', po_date) AS month,
         COALESCE(SUM(sale_total), 0) AS revenue,
-        COALESCE(SUM(sale_total - purchase_total - net_after_vat), 0) AS profit
+        COALESCE(SUM(net_after_vat), 0) AS profit
       FROM orders
       GROUP BY month
       ORDER BY month ASC`);

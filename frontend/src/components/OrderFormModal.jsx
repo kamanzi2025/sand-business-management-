@@ -13,7 +13,8 @@ function computeTotals({ quantity_trucks, purchase_unit_price, selling_unit_pric
   const sale_total = qty * sellingPrice;
   const purchase_vat = purchase_total * vatRate;
   const selling_vat = sale_total * vatRate;
-  const net_after_vat = selling_vat - purchase_vat;
+  const net_vat = selling_vat - purchase_vat;
+  const net_after_vat = sale_total - purchase_total - net_vat;
 
   return { purchase_total, sale_total, purchase_vat, selling_vat, net_after_vat };
 }
@@ -244,7 +245,8 @@ export default function OrderFormModal({ order, onClose, onSave }) {
               </dd>
             </dl>
             <p className="mt-2 text-xs text-slate-400">
-              Net after VAT = Selling VAT − Purchasing VAT (net VAT payable/reclaimable on this order).
+              Net after VAT = (Sale Total − Purchase Total) − (Selling VAT − Purchasing VAT): profit on this
+              order after remitting net VAT.
             </p>
           </div>
 
