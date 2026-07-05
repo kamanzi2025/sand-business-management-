@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db } from '../db/init.js';
+import { get, all, run } from '../db/init.js';
 import { computeOrderTotals } from '../utils/calc.js';
 
 const router = Router();
@@ -19,183 +19,200 @@ const SORTABLE_COLUMNS = new Set([
   'customer_name',
 ]);
 
-function upsertCustomer({ customer_id, customer_name, customer_phone }) {
+async function upsertCustomer({ customer_id, customer_name, customer_phone }) {
   if (customer_id) {
-    const existing = db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id);
+    const existing = await get('SELECT * FROM customers WHERE id = ?', [customer_id]);
     if (existing) return existing;
   }
   const name = customer_name && customer_name.trim();
   if (name) {
-    const byName = db
-      .prepare('SELECT * FROM customers WHERE name = ? COLLATE NOCASE')
-      .get(name);
+    const byName = await get('SELECT * FROM customers WHERE name = ? COLLATE NOCASE', [name]);
     if (byName) return byName;
 
-    const result = db
-      .prepare('INSERT INTO customers (name, phone) VALUES (?, ?)')
-      .run(name, customer_phone || null);
-    return db.prepare('SELECT * FROM customers WHERE id = ?').get(result.lastInsertRowid);
+    const result = await run('INSERT INTO customers (name, phone) VALUES (?, ?)', [name, customer_phone || null]);
+    return get('SELECT * FROM customers WHERE id = ?', [result.lastInsertRowid]);
   }
   return null;
 }
 
 // GET /api/orders?status=&from=&to=&search=&sortBy=&sortDir=
-router.get('/', (req, res) => {
-  const { status, from, to, search, sortBy, sortDir } = req.query;
+router.get('/', async (req, res, next) => {
+  try {
+    const { status, from, to, search, sortBy, sortDir } = req.query;
 
-  const clauses = [];
-  const params = [];
+    const clauses = [];
+    const params = [];
 
-  if (status) {
-    clauses.push('status = ?');
-    params.push(status);
+    if (status) {
+      clauses.push('status = ?');
+      params.push(status);
+    }
+    if (from) {
+      clauses.push('po_date >= ?');
+      params.push(from);
+    }
+    if (to) {
+      clauses.push('po_date <= ?');
+      params.push(to);
+    }
+    if (search) {
+      clauses.push('(customer_name LIKE ? OR customer_phone LIKE ?)');
+      params.push(`%${search}%`, `%${search}%`);
+    }
+
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    const orderColumn = SORTABLE_COLUMNS.has(sortBy) ? sortBy : 'po_date';
+    const orderDir = String(sortDir).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+    const orders = await all(
+      `SELECT * FROM orders ${where} ORDER BY ${orderColumn} ${orderDir}, id ${orderDir}`,
+      params
+    );
+
+    res.json(orders);
+  } catch (err) {
+    next(err);
   }
-  if (from) {
-    clauses.push('po_date >= ?');
-    params.push(from);
-  }
-  if (to) {
-    clauses.push('po_date <= ?');
-    params.push(to);
-  }
-  if (search) {
-    clauses.push('(customer_name LIKE ? OR customer_phone LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`);
-  }
-
-  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  const orderColumn = SORTABLE_COLUMNS.has(sortBy) ? sortBy : 'po_date';
-  const orderDir = String(sortDir).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-
-  const orders = db
-    .prepare(`SELECT * FROM orders ${where} ORDER BY ${orderColumn} ${orderDir}, id ${orderDir}`)
-    .all(...params);
-
-  res.json(orders);
 });
 
-router.get('/:id', (req, res) => {
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  if (!order) return res.status(404).json({ error: 'Order not found' });
-  res.json(order);
+router.get('/:id', async (req, res, next) => {
+  try {
+    const order = await get('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(order);
+  } catch (err) {
+    next(err);
+  }
 });
 
-router.post('/', (req, res) => {
-  const {
-    po_date,
-    last_supply_date,
-    quantity_trucks,
-    purchase_unit_price,
-    selling_unit_price,
-    vat_percentage,
-    status,
-    customer_id,
-    customer_name,
-    customer_phone,
-    notes,
-  } = req.body;
+router.post('/', async (req, res, next) => {
+  try {
+    const {
+      po_date,
+      last_supply_date,
+      quantity_trucks,
+      purchase_unit_price,
+      selling_unit_price,
+      vat_percentage,
+      status,
+      customer_id,
+      customer_name,
+      customer_phone,
+      notes,
+    } = req.body;
 
-  if (!po_date) return res.status(400).json({ error: 'P.O Date is required' });
-  if (quantity_trucks == null || purchase_unit_price == null || selling_unit_price == null) {
-    return res.status(400).json({ error: 'Quantity, purchase price, and selling price are required' });
-  }
+    if (!po_date) return res.status(400).json({ error: 'P.O Date is required' });
+    if (quantity_trucks == null || purchase_unit_price == null || selling_unit_price == null) {
+      return res.status(400).json({ error: 'Quantity, purchase price, and selling price are required' });
+    }
 
-  const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  const vatRate = vat_percentage != null ? vat_percentage : settings.default_vat_percentage;
+    const settings = await get('SELECT * FROM settings WHERE id = 1');
+    const vatRate = vat_percentage != null ? vat_percentage : settings.default_vat_percentage;
 
-  const totals = computeOrderTotals({
-    quantity_trucks,
-    purchase_unit_price,
-    selling_unit_price,
-    vat_percentage: vatRate,
-  });
+    const totals = computeOrderTotals({
+      quantity_trucks,
+      purchase_unit_price,
+      selling_unit_price,
+      vat_percentage: vatRate,
+    });
 
-  const customer = upsertCustomer({ customer_id, customer_name, customer_phone });
+    const customer = await upsertCustomer({ customer_id, customer_name, customer_phone });
 
-  const result = db
-    .prepare(
+    const result = await run(
       `INSERT INTO orders (
         po_date, last_supply_date, quantity_trucks, purchase_unit_price, selling_unit_price,
         purchase_total, sale_total, vat_percentage, purchase_vat, selling_vat, net_after_vat,
         status, customer_id, customer_name, customer_phone, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      po_date,
-      last_supply_date || null,
-      quantity_trucks,
-      purchase_unit_price,
-      selling_unit_price,
-      totals.purchase_total,
-      totals.sale_total,
-      vatRate,
-      totals.purchase_vat,
-      totals.selling_vat,
-      totals.net_after_vat,
-      status || 'Supplying',
-      customer?.id || null,
-      customer?.name || customer_name || null,
-      customer?.phone || customer_phone || null,
-      notes || null
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        po_date,
+        last_supply_date || null,
+        quantity_trucks,
+        purchase_unit_price,
+        selling_unit_price,
+        totals.purchase_total,
+        totals.sale_total,
+        vatRate,
+        totals.purchase_vat,
+        totals.selling_vat,
+        totals.net_after_vat,
+        status || 'Supplying',
+        customer?.id || null,
+        customer?.name || customer_name || null,
+        customer?.phone || customer_phone || null,
+        notes || null,
+      ]
     );
 
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(result.lastInsertRowid);
-  res.status(201).json(order);
+    const order = await get('SELECT * FROM orders WHERE id = ?', [result.lastInsertRowid]);
+    res.status(201).json(order);
+  } catch (err) {
+    next(err);
+  }
 });
 
-router.put('/:id', (req, res) => {
-  const existing = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Order not found' });
+router.put('/:id', async (req, res, next) => {
+  try {
+    const existing = await get('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ error: 'Order not found' });
 
-  const merged = { ...existing, ...req.body };
-  const totals = computeOrderTotals({
-    quantity_trucks: merged.quantity_trucks,
-    purchase_unit_price: merged.purchase_unit_price,
-    selling_unit_price: merged.selling_unit_price,
-    vat_percentage: merged.vat_percentage,
-  });
+    const merged = { ...existing, ...req.body };
+    const totals = computeOrderTotals({
+      quantity_trucks: merged.quantity_trucks,
+      purchase_unit_price: merged.purchase_unit_price,
+      selling_unit_price: merged.selling_unit_price,
+      vat_percentage: merged.vat_percentage,
+    });
 
-  const customer = upsertCustomer({
-    customer_id: merged.customer_id,
-    customer_name: merged.customer_name,
-    customer_phone: merged.customer_phone,
-  });
+    const customer = await upsertCustomer({
+      customer_id: merged.customer_id,
+      customer_name: merged.customer_name,
+      customer_phone: merged.customer_phone,
+    });
 
-  db.prepare(
-    `UPDATE orders SET
-      po_date = ?, last_supply_date = ?, quantity_trucks = ?, purchase_unit_price = ?, selling_unit_price = ?,
-      purchase_total = ?, sale_total = ?, vat_percentage = ?, purchase_vat = ?, selling_vat = ?, net_after_vat = ?,
-      status = ?, customer_id = ?, customer_name = ?, customer_phone = ?, notes = ?, updated_at = datetime('now')
-    WHERE id = ?`
-  ).run(
-    merged.po_date,
-    merged.last_supply_date || null,
-    merged.quantity_trucks,
-    merged.purchase_unit_price,
-    merged.selling_unit_price,
-    totals.purchase_total,
-    totals.sale_total,
-    merged.vat_percentage,
-    totals.purchase_vat,
-    totals.selling_vat,
-    totals.net_after_vat,
-    merged.status,
-    customer?.id || merged.customer_id || null,
-    customer?.name || merged.customer_name || null,
-    customer?.phone || merged.customer_phone || null,
-    merged.notes || null,
-    req.params.id
-  );
+    await run(
+      `UPDATE orders SET
+        po_date = ?, last_supply_date = ?, quantity_trucks = ?, purchase_unit_price = ?, selling_unit_price = ?,
+        purchase_total = ?, sale_total = ?, vat_percentage = ?, purchase_vat = ?, selling_vat = ?, net_after_vat = ?,
+        status = ?, customer_id = ?, customer_name = ?, customer_phone = ?, notes = ?, updated_at = datetime('now')
+      WHERE id = ?`,
+      [
+        merged.po_date,
+        merged.last_supply_date || null,
+        merged.quantity_trucks,
+        merged.purchase_unit_price,
+        merged.selling_unit_price,
+        totals.purchase_total,
+        totals.sale_total,
+        merged.vat_percentage,
+        totals.purchase_vat,
+        totals.selling_vat,
+        totals.net_after_vat,
+        merged.status,
+        customer?.id || merged.customer_id || null,
+        customer?.name || merged.customer_name || null,
+        customer?.phone || merged.customer_phone || null,
+        merged.notes || null,
+        req.params.id,
+      ]
+    );
 
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  res.json(order);
+    const order = await get('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    res.json(order);
+  } catch (err) {
+    next(err);
+  }
 });
 
-router.delete('/:id', (req, res) => {
-  const existing = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Order not found' });
-  db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id);
-  res.status(204).send();
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const existing = await get('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ error: 'Order not found' });
+    await run('DELETE FROM orders WHERE id = ?', [req.params.id]);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;
