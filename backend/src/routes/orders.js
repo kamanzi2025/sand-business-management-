@@ -4,6 +4,9 @@ import { computeOrderTotals } from '../../../shared/calc.js';
 
 const router = Router();
 
+const ORDER_STATUSES = new Set(['Supplying', 'Invoiced', 'Paid']);
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}/;
+
 const SORTABLE_COLUMNS = new Set([
   'po_date',
   'last_supply_date',
@@ -18,6 +21,34 @@ const SORTABLE_COLUMNS = new Set([
   'status',
   'customer_name',
 ]);
+
+// Validates the fields that drive computeOrderTotals and the status enum,
+// since this API has no auth wall in front of it -- the client's own
+// validation (native date inputs, min="0") isn't the last line of defense.
+function validateOrderFields({ po_date, last_supply_date, quantity_trucks, purchase_unit_price, selling_unit_price, vat_percentage, status }) {
+  if (po_date != null && !ISO_DATE.test(po_date)) {
+    return 'P.O Date must be a valid date (YYYY-MM-DD)';
+  }
+  if (last_supply_date != null && last_supply_date !== '' && !ISO_DATE.test(last_supply_date)) {
+    return 'Last Supply Date must be a valid date (YYYY-MM-DD)';
+  }
+  if (quantity_trucks != null && (!Number.isFinite(Number(quantity_trucks)) || Number(quantity_trucks) <= 0)) {
+    return 'Quantity (Trucks) must be a positive number';
+  }
+  if (purchase_unit_price != null && (!Number.isFinite(Number(purchase_unit_price)) || Number(purchase_unit_price) < 0)) {
+    return 'Purchasing Unit Price must be a non-negative number';
+  }
+  if (selling_unit_price != null && (!Number.isFinite(Number(selling_unit_price)) || Number(selling_unit_price) < 0)) {
+    return 'Selling Unit Price must be a non-negative number';
+  }
+  if (vat_percentage != null && (!Number.isFinite(Number(vat_percentage)) || Number(vat_percentage) < 0 || Number(vat_percentage) > 100)) {
+    return 'VAT % must be between 0 and 100';
+  }
+  if (status != null && !ORDER_STATUSES.has(status)) {
+    return `Status must be one of: ${[...ORDER_STATUSES].join(', ')}`;
+  }
+  return null;
+}
 
 async function upsertCustomer({ customer_id, customer_name, customer_phone }) {
   if (customer_id) {
@@ -106,6 +137,17 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Quantity, purchase price, and selling price are required' });
     }
 
+    const validationError = validateOrderFields({
+      po_date,
+      last_supply_date,
+      quantity_trucks,
+      purchase_unit_price,
+      selling_unit_price,
+      vat_percentage,
+      status,
+    });
+    if (validationError) return res.status(400).json({ error: validationError });
+
     const settings = await get('SELECT * FROM settings WHERE id = 1');
     const vatRate = vat_percentage != null ? vat_percentage : settings.default_vat_percentage;
 
@@ -157,6 +199,10 @@ router.put('/:id', async (req, res, next) => {
     if (!existing) return res.status(404).json({ error: 'Order not found' });
 
     const merged = { ...existing, ...req.body };
+
+    const validationError = validateOrderFields(merged);
+    if (validationError) return res.status(400).json({ error: validationError });
+
     const totals = computeOrderTotals({
       quantity_trucks: merged.quantity_trucks,
       purchase_unit_price: merged.purchase_unit_price,

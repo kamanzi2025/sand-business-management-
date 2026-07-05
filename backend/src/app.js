@@ -31,6 +31,9 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.use((err, req, res, next) => {
   console.error(err);
+  if (err.message?.includes('SQLITE_CONSTRAINT')) {
+    return res.status(400).json({ error: 'Invalid or inconsistent data' });
+  }
   res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
