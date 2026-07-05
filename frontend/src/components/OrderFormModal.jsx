@@ -2,22 +2,7 @@ import { useEffect, useState } from 'react';
 import { ORDER_STATUSES } from './StatusBadge';
 import { formatCurrency, todayISO } from '../utils/format';
 import { useSettings } from '../context/SettingsContext';
-
-function computeTotals({ quantity_trucks, purchase_unit_price, selling_unit_price, vat_percentage }) {
-  const qty = Number(quantity_trucks) || 0;
-  const purchasePrice = Number(purchase_unit_price) || 0;
-  const sellingPrice = Number(selling_unit_price) || 0;
-  const vatRate = (Number(vat_percentage) || 0) / 100;
-
-  const purchase_total = qty * purchasePrice;
-  const sale_total = qty * sellingPrice;
-  const purchase_vat = purchase_total * vatRate;
-  const selling_vat = sale_total * vatRate;
-  const net_vat = selling_vat - purchase_vat;
-  const net_after_vat = sale_total - purchase_total - net_vat;
-
-  return { purchase_total, sale_total, purchase_vat, selling_vat, net_after_vat };
-}
+import { computeOrderTotals } from '../../../shared/calc.js';
 
 function emptyForm(settings) {
   return {
@@ -62,7 +47,7 @@ export default function OrderFormModal({ order, onClose, onSave }) {
     };
   }, []);
 
-  const totals = computeTotals(form);
+  const totals = computeOrderTotals(form);
 
   function update(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));

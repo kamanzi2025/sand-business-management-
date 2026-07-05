@@ -1,5 +1,6 @@
-// Central formula for derived order figures, kept in one place so the
-// "assumption" is easy to find and change.
+// Single source of truth for order totals, imported by both the backend
+// (authoritative save) and the frontend (live form preview) so the two
+// can never disagree about the formula.
 //
 // purchase_total = quantity * purchase_unit_price
 // sale_total      = quantity * selling_unit_price

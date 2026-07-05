@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { get, all, run } from '../db/init.js';
-import { computeOrderTotals } from '../utils/calc.js';
+import { computeOrderTotals } from '../../../shared/calc.js';
 
 const router = Router();
 
