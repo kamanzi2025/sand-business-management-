@@ -6,6 +6,7 @@ import { computeOrderTotals } from '../../../shared/calc.js';
 
 function emptyForm(settings) {
   return {
+    po_number: '',
     po_date: todayISO(),
     last_supply_date: '',
     quantity_trucks: '',
@@ -24,6 +25,7 @@ export default function OrderFormModal({ order, onClose, onSave }) {
   const [form, setForm] = useState(() =>
     order
       ? {
+          po_number: order.po_number || '',
           po_date: order.po_date?.slice(0, 10) || '',
           last_supply_date: order.last_supply_date?.slice(0, 10) || '',
           quantity_trucks: order.quantity_trucks,
@@ -93,6 +95,17 @@ export default function OrderFormModal({ order, onClose, onSave }) {
         {error && <p className="mb-3 rounded-lg bg-rose-50 p-2.5 text-sm text-rose-600">{error}</p>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-slate-600">P.O Number</span>
+            <input
+              type="text"
+              value={form.po_number}
+              onChange={(e) => update('po_number', e.target.value)}
+              placeholder="e.g. PO-0042"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none"
+            />
+          </label>
+
           <div className="grid grid-cols-2 gap-3">
             <label className="col-span-1 flex flex-col gap-1 text-sm">
               <span className="font-medium text-slate-600">P.O Date *</span>

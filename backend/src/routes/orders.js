@@ -8,6 +8,7 @@ const ORDER_STATUSES = new Set(['Supplying', 'Invoiced', 'Paid']);
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}/;
 
 const SORTABLE_COLUMNS = new Set([
+  'po_number',
   'po_date',
   'last_supply_date',
   'quantity_trucks',
@@ -86,8 +87,8 @@ function buildOrdersFilter({ status, from, to, search }) {
     params.push(to);
   }
   if (search) {
-    clauses.push('(customer_name LIKE ? OR customer_phone LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`);
+    clauses.push('(customer_name LIKE ? OR customer_phone LIKE ? OR po_number LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
 
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
@@ -151,6 +152,7 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const {
+      po_number,
       po_date,
       last_supply_date,
       quantity_trucks,
@@ -194,11 +196,12 @@ router.post('/', async (req, res, next) => {
 
     const result = await run(
       `INSERT INTO orders (
-        po_date, last_supply_date, quantity_trucks, purchase_unit_price, selling_unit_price,
+        po_number, po_date, last_supply_date, quantity_trucks, purchase_unit_price, selling_unit_price,
         purchase_total, sale_total, vat_percentage, purchase_vat, selling_vat, net_after_vat,
         status, customer_id, customer_name, customer_phone, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        po_number?.trim() || null,
         po_date,
         last_supply_date || null,
         quantity_trucks,
@@ -250,11 +253,12 @@ router.put('/:id', async (req, res, next) => {
 
     await run(
       `UPDATE orders SET
-        po_date = ?, last_supply_date = ?, quantity_trucks = ?, purchase_unit_price = ?, selling_unit_price = ?,
+        po_number = ?, po_date = ?, last_supply_date = ?, quantity_trucks = ?, purchase_unit_price = ?, selling_unit_price = ?,
         purchase_total = ?, sale_total = ?, vat_percentage = ?, purchase_vat = ?, selling_vat = ?, net_after_vat = ?,
         status = ?, customer_id = ?, customer_name = ?, customer_phone = ?, notes = ?, updated_at = datetime('now')
       WHERE id = ?`,
       [
+        merged.po_number?.trim() || null,
         merged.po_date,
         merged.last_supply_date || null,
         merged.quantity_trucks,

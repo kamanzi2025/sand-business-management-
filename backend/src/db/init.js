@@ -11,49 +11,63 @@ export const db = createClient(authToken ? { url, authToken } : { url });
 
 let ready;
 
+// Adds columns that postdate a table's original CREATE TABLE. Safe to run
+// on every cold start: it inspects the live schema first and only alters
+// tables that actually predate the column, so it never touches data.
+async function addColumnIfMissing(table, column, definition) {
+  const { rows } = await db.execute(`PRAGMA table_info(${table})`);
+  const exists = rows.some((row) => row.name === column);
+  if (!exists) {
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 export function init() {
   if (!ready) {
-    ready = db.batch(
-      [
-        `CREATE TABLE IF NOT EXISTS customers (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          phone TEXT,
-          created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )`,
-        `CREATE TABLE IF NOT EXISTS orders (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          po_date TEXT NOT NULL,
-          last_supply_date TEXT,
-          quantity_trucks REAL NOT NULL,
-          purchase_unit_price REAL NOT NULL,
-          selling_unit_price REAL NOT NULL,
-          purchase_total REAL NOT NULL,
-          sale_total REAL NOT NULL,
-          vat_percentage REAL NOT NULL DEFAULT 18,
-          purchase_vat REAL NOT NULL,
-          selling_vat REAL NOT NULL,
-          net_after_vat REAL NOT NULL,
-          status TEXT NOT NULL DEFAULT 'Supplying' CHECK (status IN ('Supplying', 'Invoiced', 'Paid')),
-          customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
-          customer_name TEXT,
-          customer_phone TEXT,
-          notes TEXT,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )`,
-        `CREATE TABLE IF NOT EXISTS settings (
-          id INTEGER PRIMARY KEY CHECK (id = 1),
-          default_purchase_price REAL NOT NULL DEFAULT 0,
-          default_selling_price REAL NOT NULL DEFAULT 0,
-          default_vat_percentage REAL NOT NULL DEFAULT 18,
-          currency_symbol TEXT NOT NULL DEFAULT 'RWF'
-        )`,
-        `INSERT OR IGNORE INTO settings (id, default_purchase_price, default_selling_price, default_vat_percentage, currency_symbol)
-         VALUES (1, 0, 0, 18, 'RWF')`,
-      ],
-      'write'
-    );
+    ready = db
+      .batch(
+        [
+          `CREATE TABLE IF NOT EXISTS customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            phone TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          )`,
+          `CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            po_number TEXT,
+            po_date TEXT NOT NULL,
+            last_supply_date TEXT,
+            quantity_trucks REAL NOT NULL,
+            purchase_unit_price REAL NOT NULL,
+            selling_unit_price REAL NOT NULL,
+            purchase_total REAL NOT NULL,
+            sale_total REAL NOT NULL,
+            vat_percentage REAL NOT NULL DEFAULT 18,
+            purchase_vat REAL NOT NULL,
+            selling_vat REAL NOT NULL,
+            net_after_vat REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Supplying' CHECK (status IN ('Supplying', 'Invoiced', 'Paid')),
+            customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+            customer_name TEXT,
+            customer_phone TEXT,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+          )`,
+          `CREATE TABLE IF NOT EXISTS settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            default_purchase_price REAL NOT NULL DEFAULT 0,
+            default_selling_price REAL NOT NULL DEFAULT 0,
+            default_vat_percentage REAL NOT NULL DEFAULT 18,
+            currency_symbol TEXT NOT NULL DEFAULT 'RWF'
+          )`,
+          `INSERT OR IGNORE INTO settings (id, default_purchase_price, default_selling_price, default_vat_percentage, currency_symbol)
+           VALUES (1, 0, 0, 18, 'RWF')`,
+        ],
+        'write'
+      )
+      .then(() => addColumnIfMissing('orders', 'po_number', 'TEXT'));
   }
   return ready;
 }

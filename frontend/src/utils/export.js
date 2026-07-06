@@ -5,6 +5,7 @@ import autoTable from 'jspdf-autotable';
 import { formatCurrency, formatDate } from './format';
 
 const COLUMNS = [
+  { header: 'P.O Number', key: 'po_number', width: 14 },
   { header: 'P.O Date', key: 'po_date', width: 12 },
   { header: 'Last Supply Date', key: 'last_supply_date', width: 16 },
   { header: 'Customer', key: 'customer_name', width: 18 },
@@ -50,9 +51,10 @@ export function exportOrdersToPdf(orders, currencySymbol) {
   autoTable(doc, {
     startY: 25,
     head: [
-      ['P.O Date', 'Last Supply', 'Customer', 'Qty', 'Purch. Price', 'Sell Price', 'Purch. Total', 'Sale Total', 'Purch. VAT', 'Sell VAT', 'Net after VAT', 'Status'],
+      ['P.O Number', 'P.O Date', 'Last Supply', 'Customer', 'Qty', 'Purch. Price', 'Sell Price', 'Purch. Total', 'Sale Total', 'Purch. VAT', 'Sell VAT', 'Net after VAT', 'Status'],
     ],
     body: orders.map((o) => [
+      o.po_number || '—',
       formatDate(o.po_date),
       o.last_supply_date ? formatDate(o.last_supply_date) : '—',
       o.customer_name || '—',

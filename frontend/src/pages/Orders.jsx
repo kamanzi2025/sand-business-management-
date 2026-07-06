@@ -19,6 +19,7 @@ const EMPTY_TOTALS = {
 };
 
 const COLUMNS = [
+  { key: 'po_number', label: 'P.O Number' },
   { key: 'po_date', label: 'P.O Date' },
   { key: 'last_supply_date', label: 'Last Supply Date' },
   { key: 'customer_name', label: 'Customer' },
@@ -172,7 +173,7 @@ export default function Orders() {
       <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-3">
         <input
           type="text"
-          placeholder="Search customer name or phone…"
+          placeholder="Search customer name, phone, or P.O number…"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           className="min-w-[180px] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none"
@@ -251,6 +252,7 @@ export default function Orders() {
             ) : (
               orders.map((order) => (
                 <tr key={order.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                  <td className="whitespace-nowrap px-3 py-2.5">{order.po_number || '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2.5">{formatDate(order.po_date)}</td>
                   <td className="whitespace-nowrap px-3 py-2.5">{formatDate(order.last_supply_date)}</td>
                   <td className="whitespace-nowrap px-3 py-2.5">
@@ -319,7 +321,7 @@ export default function Orders() {
           {orders.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
-                <td className="px-3 py-2.5" colSpan={3}>
+                <td className="px-3 py-2.5" colSpan={4}>
                   Totals
                 </td>
                 <td className="whitespace-nowrap px-3 py-2.5">{formatNumber(totals.quantity_trucks)}</td>
