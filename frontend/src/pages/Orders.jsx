@@ -1,10 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useSettings } from '../context/SettingsContext';
 import StatusBadge, { ORDER_STATUSES } from '../components/StatusBadge';
 import OrderFormModal from '../components/OrderFormModal';
 import { formatCurrency, formatDate, formatNumber } from '../utils/format';
 import { exportOrdersToExcel, exportOrdersToPdf } from '../utils/export';
+
+const PAGE_SIZE = 50;
+const EXPORT_PAGE_SIZE = 5000; // matches the backend's MAX_PAGE_SIZE ceiling
+
+const EMPTY_TOTALS = {
+  quantity_trucks: 0,
+  purchase_total: 0,
+  sale_total: 0,
+  purchase_vat: 0,
+  selling_vat: 0,
+  net_after_vat: 0,
+};
 
 const COLUMNS = [
   { key: 'po_date', label: 'P.O Date' },
@@ -26,7 +38,10 @@ const STATUS_ORDER = ['Supplying', 'Invoiced', 'Paid'];
 export default function Orders() {
   const { settings } = useSettings();
   const [orders, setOrders] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [totals, setTotals] = useState(EMPTY_TOTALS);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
@@ -35,21 +50,40 @@ export default function Orders() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ sortBy: 'po_date', sortDir: 'desc' });
+  const [page, setPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput.trim()), 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  // Any change to what's being filtered/sorted invalidates the current page.
+  useEffect(() => {
+    setPage(1);
+  }, [filters, search, sort]);
+
   const loadOrders = useCallback(() => {
     setLoading(true);
     setError('');
     api.orders
-      .list({ ...filters, search, ...sort })
-      .then(setOrders)
+      .list({ ...filters, search, ...sort, page, pageSize: PAGE_SIZE })
+      .then((data) => {
+        // Deleting the last row on a page beyond the first can leave `page`
+        // pointing past the new last page (e.g. after emptying page 3) --
+        // step back rather than showing a blank table with orders elsewhere.
+        if (data.orders.length === 0 && page > 1 && data.total > 0) {
+          setPage(Math.max(1, Math.ceil(data.total / PAGE_SIZE)));
+          return;
+        }
+        setOrders(data.orders);
+        setTotal(data.total);
+        setTotals(data.totals);
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [filters, search, sort]);
+  }, [filters, search, sort, page]);
 
   useEffect(() => {
     loadOrders();
@@ -69,7 +103,7 @@ export default function Orders() {
   async function handleDelete(order) {
     if (!confirm(`Delete order from ${formatDate(order.po_date)}? This cannot be undone.`)) return;
     await api.orders.remove(order.id);
-    setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    loadOrders();
   }
 
   async function handleSave(data) {
@@ -84,43 +118,44 @@ export default function Orders() {
     setEditingOrder(null);
   }
 
-  const totals = useMemo(
-    () =>
-      orders.reduce(
-        (acc, o) => ({
-          quantity_trucks: acc.quantity_trucks + o.quantity_trucks,
-          purchase_total: acc.purchase_total + o.purchase_total,
-          sale_total: acc.sale_total + o.sale_total,
-          purchase_vat: acc.purchase_vat + o.purchase_vat,
-          selling_vat: acc.selling_vat + o.selling_vat,
-          net_after_vat: acc.net_after_vat + o.net_after_vat,
-        }),
-        { quantity_trucks: 0, purchase_total: 0, sale_total: 0, purchase_vat: 0, selling_vat: 0, net_after_vat: 0 }
-      ),
-    [orders]
-  );
+  // Exports must cover every order matching the current filter, not just the
+  // visible page, so they re-fetch with a much larger page size instead of
+  // reusing the paginated `orders` state.
+  async function handleExport(format) {
+    setExporting(true);
+    setError('');
+    try {
+      const data = await api.orders.list({ ...filters, search, ...sort, page: 1, pageSize: EXPORT_PAGE_SIZE });
+      if (format === 'excel') await exportOrdersToExcel(data.orders, settings.currency_symbol);
+      else await exportOrdersToPdf(data.orders, settings.currency_symbol);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-900">Orders</h2>
-          <p className="text-sm text-slate-500">{orders.length} order{orders.length === 1 ? '' : 's'}</p>
+          <p className="text-sm text-slate-500">{total} order{total === 1 ? '' : 's'}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => exportOrdersToExcel(orders, settings.currency_symbol)}
-            disabled={!orders.length}
+            onClick={() => handleExport('excel')}
+            disabled={!total || exporting}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
-            Export Excel
+            {exporting ? 'Exporting…' : 'Export Excel'}
           </button>
           <button
-            onClick={() => exportOrdersToPdf(orders, settings.currency_symbol)}
-            disabled={!orders.length}
+            onClick={() => handleExport('pdf')}
+            disabled={!total || exporting}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
-            Export PDF
+            {exporting ? 'Exporting…' : 'Export PDF'}
           </button>
           <button
             onClick={() => {
@@ -312,6 +347,30 @@ export default function Orders() {
           )}
         </table>
       </div>
+
+      {total > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+          <span>
+            Page {page} of {totalPages} &middot; {total} order{total === 1 ? '' : 's'} total
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || loading}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages || loading}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <OrderFormModal

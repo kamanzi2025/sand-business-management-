@@ -66,41 +66,73 @@ async function upsertCustomer({ customer_id, customer_name, customer_phone }) {
   return null;
 }
 
-// GET /api/orders?status=&from=&to=&search=&sortBy=&sortDir=
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 5000; // generous ceiling for "export everything matching this filter"
+
+function buildOrdersFilter({ status, from, to, search }) {
+  const clauses = [];
+  const params = [];
+
+  if (status) {
+    clauses.push('status = ?');
+    params.push(status);
+  }
+  if (from) {
+    clauses.push('po_date >= ?');
+    params.push(from);
+  }
+  if (to) {
+    clauses.push('po_date <= ?');
+    params.push(to);
+  }
+  if (search) {
+    clauses.push('(customer_name LIKE ? OR customer_phone LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
+}
+
+// GET /api/orders?status=&from=&to=&search=&sortBy=&sortDir=&page=&pageSize=
+//
+// Paginated so the Orders page (and the Dashboard-style per-row status
+// dropdown it renders) never has to fetch/render the entire order history
+// at once. `total` and `totals` are computed over the *whole* filtered set
+// (not just the current page) so the table footer and pagination controls
+// stay accurate as you page through; exports request a large pageSize to
+// get every matching row in one shot.
 router.get('/', async (req, res, next) => {
   try {
-    const { status, from, to, search, sortBy, sortDir } = req.query;
+    const { status, from, to, search, sortBy, sortDir, page, pageSize } = req.query;
+    const { where, params } = buildOrdersFilter({ status, from, to, search });
 
-    const clauses = [];
-    const params = [];
-
-    if (status) {
-      clauses.push('status = ?');
-      params.push(status);
-    }
-    if (from) {
-      clauses.push('po_date >= ?');
-      params.push(from);
-    }
-    if (to) {
-      clauses.push('po_date <= ?');
-      params.push(to);
-    }
-    if (search) {
-      clauses.push('(customer_name LIKE ? OR customer_phone LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
-    }
-
-    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const orderColumn = SORTABLE_COLUMNS.has(sortBy) ? sortBy : 'po_date';
     const orderDir = String(sortDir).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
-    const orders = await all(
-      `SELECT * FROM orders ${where} ORDER BY ${orderColumn} ${orderDir}, id ${orderDir}`,
-      params
-    );
+    const currentPage = Math.max(1, Number(page) || 1);
+    const size = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(pageSize) || DEFAULT_PAGE_SIZE));
+    const offset = (currentPage - 1) * size;
 
-    res.json(orders);
+    const [orders, countRow, totalsRow] = await Promise.all([
+      all(
+        `SELECT * FROM orders ${where} ORDER BY ${orderColumn} ${orderDir}, id ${orderDir} LIMIT ? OFFSET ?`,
+        [...params, size, offset]
+      ),
+      get(`SELECT COUNT(*) AS count FROM orders ${where}`, params),
+      get(
+        `SELECT
+          COALESCE(SUM(quantity_trucks), 0) AS quantity_trucks,
+          COALESCE(SUM(purchase_total), 0) AS purchase_total,
+          COALESCE(SUM(sale_total), 0) AS sale_total,
+          COALESCE(SUM(purchase_vat), 0) AS purchase_vat,
+          COALESCE(SUM(selling_vat), 0) AS selling_vat,
+          COALESCE(SUM(net_after_vat), 0) AS net_after_vat
+        FROM orders ${where}`,
+        params
+      ),
+    ]);
+
+    res.json({ orders, total: countRow.count, page: currentPage, pageSize: size, totals: totalsRow });
   } catch (err) {
     next(err);
   }
