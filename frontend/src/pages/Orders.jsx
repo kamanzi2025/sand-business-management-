@@ -4,7 +4,6 @@ import { useSettings } from '../context/SettingsContext';
 import StatusBadge, { ORDER_STATUSES } from '../components/StatusBadge';
 import OrderFormModal from '../components/OrderFormModal';
 import { formatCurrency, formatDate, formatNumber } from '../utils/format';
-import { exportOrdersToExcel, exportOrdersToPdf } from '../utils/export';
 
 const PAGE_SIZE = 50;
 const EXPORT_PAGE_SIZE = 5000; // matches the backend's MAX_PAGE_SIZE ceiling
@@ -121,14 +120,19 @@ export default function Orders() {
 
   // Exports must cover every order matching the current filter, not just the
   // visible page, so they re-fetch with a much larger page size instead of
-  // reusing the paginated `orders` state.
+  // reusing the paginated `orders` state. The Excel/PDF libraries are large
+  // and only needed here, so they're loaded on demand rather than bundled
+  // into every visit to the Orders page.
   async function handleExport(format) {
     setExporting(true);
     setError('');
     try {
-      const data = await api.orders.list({ ...filters, search, ...sort, page: 1, pageSize: EXPORT_PAGE_SIZE });
-      if (format === 'excel') await exportOrdersToExcel(data.orders, settings.currency_symbol);
-      else await exportOrdersToPdf(data.orders, settings.currency_symbol);
+      const [data, exportModule] = await Promise.all([
+        api.orders.list({ ...filters, search, ...sort, page: 1, pageSize: EXPORT_PAGE_SIZE }),
+        import('../utils/export.js'),
+      ]);
+      if (format === 'excel') await exportModule.exportOrdersToExcel(data.orders, settings.currency_symbol);
+      else await exportModule.exportOrdersToPdf(data.orders, settings.currency_symbol);
     } catch (err) {
       setError(err.message);
     } finally {

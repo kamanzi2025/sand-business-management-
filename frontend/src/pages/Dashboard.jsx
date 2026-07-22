@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useSettings } from '../context/SettingsContext';
 import SummaryCard from '../components/SummaryCard';
-import TrendChart from '../components/TrendChart';
 import { formatCurrency, formatNumber } from '../utils/format';
+
+// recharts is large and only needed for this one chart, so it's kept out of
+// the bundle every other page (and even the rest of this page) has to load.
+const TrendChart = lazy(() => import('../components/TrendChart'));
 
 const STATUS_META = [
   { key: 'Supplying', color: 'bg-amber-400' },
@@ -109,7 +112,15 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <TrendChart data={trend} currencySymbol={currency} />
+          <Suspense
+            fallback={
+              <div className="flex h-72 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm text-slate-400">
+                Loading chart…
+              </div>
+            }
+          >
+            <TrendChart data={trend} currencySymbol={currency} />
+          </Suspense>
         </>
       )}
     </div>
