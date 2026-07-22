@@ -1,6 +1,10 @@
 import { createClient } from '@libsql/client';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hashPassword } from '../utils/auth.js';
+
+// Change this immediately after first deploy via Settings -> Change Password.
+const DEFAULT_PASSWORD = 'SandSupply#2026';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,6 +23,16 @@ async function addColumnIfMissing(table, column, definition) {
   const exists = rows.some((row) => row.name === column);
   if (!exists) {
     await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+async function setDefaultPasswordIfMissing() {
+  const { rows } = await db.execute('SELECT password_hash FROM settings WHERE id = 1');
+  if (!rows[0]?.password_hash) {
+    await db.execute({
+      sql: 'UPDATE settings SET password_hash = ? WHERE id = 1',
+      args: [hashPassword(DEFAULT_PASSWORD)],
+    });
   }
 }
 
@@ -68,6 +82,8 @@ export function init() {
         'write'
       )
       .then(() => addColumnIfMissing('orders', 'po_number', 'TEXT'))
+      .then(() => addColumnIfMissing('settings', 'password_hash', 'TEXT'))
+      .then(() => setDefaultPasswordIfMissing())
       .catch((err) => {
         // Don't let one transient failure (e.g. a momentary network blip to
         // Turso) wedge this warm instance forever -- without this, every

@@ -1,5 +1,87 @@
 import { useEffect, useState } from 'react';
 import { useSettings } from '../context/SettingsContext';
+import { api } from '../api/client';
+
+function ChangePasswordForm() {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+
+    if (newPassword.length < 6) return setError('New password must be at least 6 characters');
+    if (newPassword !== confirmPassword) return setError('New passwords do not match');
+
+    setSaving(true);
+    try {
+      await api.auth.changePassword(currentPassword, newPassword);
+      setMessage('Password changed.');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div>
+        <h3 className="font-semibold text-slate-800">Change Password</h3>
+        <p className="text-sm text-slate-500">This is the password everyone uses to open the app.</p>
+      </div>
+
+      {message && <p className="rounded-lg bg-emerald-50 p-2.5 text-sm text-emerald-600">{message}</p>}
+      {error && <p className="rounded-lg bg-rose-50 p-2.5 text-sm text-rose-600">{error}</p>}
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="font-medium text-slate-600">Current Password</span>
+        <input
+          type="password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="font-medium text-slate-600">New Password</span>
+        <input
+          type="password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="font-medium text-slate-600">Confirm New Password</span>
+        <input
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none"
+        />
+      </label>
+
+      <button
+        type="submit"
+        disabled={saving}
+        className="w-full rounded-lg bg-orange-600 py-2.5 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-60"
+      >
+        {saving ? 'Saving…' : 'Change Password'}
+      </button>
+    </form>
+  );
+}
 
 export default function Settings() {
   const { settings, updateSettings, loading } = useSettings();
@@ -99,6 +181,8 @@ export default function Settings() {
           {saving ? 'Saving…' : 'Save Settings'}
         </button>
       </form>
+
+      <ChangePasswordForm />
     </div>
   );
 }

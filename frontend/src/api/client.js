@@ -34,6 +34,13 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  auth: {
+    status: () => request('/auth/status'),
+    login: (password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
+    logout: () => request('/auth/logout', { method: 'POST' }),
+    changePassword: (currentPassword, newPassword) =>
+      request('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
+  },
   orders: {
     list: (params = {}) => {
       const query = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v)));

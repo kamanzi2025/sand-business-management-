@@ -1,11 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import { init } from './db/init.js';
+import authRouter, { requireAuth } from './routes/auth.js';
 import ordersRouter from './routes/orders.js';
 import customersRouter from './routes/customers.js';
 import settingsRouter from './routes/settings.js';
 import dashboardRouter from './routes/dashboard.js';
 import vatRouter from './routes/vat.js';
+import cronRouter from './routes/cron.js';
 
 const app = express();
 
@@ -21,11 +23,13 @@ app.use(async (req, res, next) => {
   }
 });
 
-app.use('/api/orders', ordersRouter);
-app.use('/api/customers', customersRouter);
-app.use('/api/settings', settingsRouter);
-app.use('/api/dashboard', dashboardRouter);
-app.use('/api/vat', vatRouter);
+app.use('/api/auth', authRouter);
+app.use('/api/cron', cronRouter);
+app.use('/api/orders', requireAuth, ordersRouter);
+app.use('/api/customers', requireAuth, customersRouter);
+app.use('/api/settings', requireAuth, settingsRouter);
+app.use('/api/dashboard', requireAuth, dashboardRouter);
+app.use('/api/vat', requireAuth, vatRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
