@@ -67,7 +67,15 @@ export function init() {
         ],
         'write'
       )
-      .then(() => addColumnIfMissing('orders', 'po_number', 'TEXT'));
+      .then(() => addColumnIfMissing('orders', 'po_number', 'TEXT'))
+      .catch((err) => {
+        // Don't let one transient failure (e.g. a momentary network blip to
+        // Turso) wedge this warm instance forever -- without this, every
+        // request on this instance would keep reusing the same rejected
+        // promise until Vercel recycles it, long after the blip passed.
+        ready = null;
+        throw err;
+      });
   }
   return ready;
 }

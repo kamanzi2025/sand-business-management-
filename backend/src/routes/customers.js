@@ -39,8 +39,18 @@ router.post('/', async (req, res, next) => {
   try {
     const { name, phone } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+    const trimmedName = name.trim();
 
-    const result = await run('INSERT INTO customers (name, phone) VALUES (?, ?)', [name.trim(), phone || null]);
+    // Order creation already dedupes customers by case-insensitive name; this
+    // form is the other way to create one, so it needs the same check --
+    // otherwise "Jean" and "jean" become two records that silently split a
+    // customer's order history between them.
+    const existing = await get('SELECT * FROM customers WHERE name = ? COLLATE NOCASE', [trimmedName]);
+    if (existing) {
+      return res.status(409).json({ error: `A customer named "${existing.name}" already exists`, customer: existing });
+    }
+
+    const result = await run('INSERT INTO customers (name, phone) VALUES (?, ?)', [trimmedName, phone || null]);
     const customer = await get('SELECT * FROM customers WHERE id = ?', [result.lastInsertRowid]);
     res.status(201).json(customer);
   } catch (err) {

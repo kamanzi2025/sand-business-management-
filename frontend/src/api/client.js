@@ -1,10 +1,22 @@
 const BASE_URL = '/api';
 
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+  } catch {
+    // fetch() itself throws on network failure (no connection, DNS, etc.) --
+    // give a clearer message than the browser's raw "Failed to fetch" so a
+    // field user on a bad connection knows what happened.
+    throw new Error(
+      navigator.onLine === false
+        ? 'You appear to be offline. Reconnect and try again.'
+        : "Couldn't reach the server. Check your connection and try again."
+    );
+  }
 
   if (!res.ok) {
     let message = `Request failed (${res.status})`;

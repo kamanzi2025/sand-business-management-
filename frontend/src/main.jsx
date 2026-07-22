@@ -4,13 +4,18 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
 import { SettingsProvider } from './context/SettingsContext.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
+import OfflineBanner from './components/OfflineBanner.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
-      <SettingsProvider>
-        <App />
-      </SettingsProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <OfflineBanner />
+      <BrowserRouter>
+        <SettingsProvider>
+          <App />
+        </SettingsProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   </StrictMode>,
 )
