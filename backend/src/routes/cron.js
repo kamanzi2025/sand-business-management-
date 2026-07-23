@@ -19,7 +19,10 @@ function backupClient() {
 router.get('/backup', async (req, res, next) => {
   try {
     const secret = process.env.CRON_SECRET;
-    if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+    if (!secret || req.headers.authorization !== `Bearer ${secret}`) {
+      // Fail closed: if CRON_SECRET is ever unset (misconfiguration, a
+      // botched env var edit), this must reject everyone, not silently
+      // become an open endpoint.
       return res.status(401).json({ error: 'Not authorized' });
     }
 
